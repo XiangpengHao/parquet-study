@@ -1,0 +1,50 @@
+{
+	// Use IntelliSense to learn about possible attributes.
+	// Hover to view descriptions of existing attributes.
+	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug executable 'clickbench'",
+			"cargo": {
+				"args": [
+					"build",
+					"--bin=clickbench",
+					"--package=parquet-study"
+				],
+				"filter": {
+					"name": "clickbench",
+					"kind": "bin"
+				}
+			},
+			"args": [
+				"--query",
+				"23",
+				"--file",
+				"benchmark/data/hits_99_opt.parquet",
+				"--metadata-cache"
+			],
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"name": "Debug executable 'parquet-optimize'",
+			"cargo": {
+				"args": [
+					"build",
+					"--bin=parquet-optimize",
+					"--package=parquet-study"
+				],
+				"filter": {
+					"name": "parquet-optimize",
+					"kind": "bin"
+				}
+			},
+			"args": [],
+			"cwd": "${workspaceFolder}"
+		},
+	]
+}

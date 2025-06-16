@@ -1,0 +1,23 @@
+[package]
+name = "parquet-study"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+datafusion = "47"
+tokio = { version = "1.0", features = ["full"] }
+clap = { version = "4.0", features = ["derive"] }
+parquet = "55"
+object_store = "0.12.2"
+bytes = "1.10.1"
+futures = "0.3.31"
+async-trait = "0.1.88"
+pprof = { version = "0.15.0", features = ["flamegraph"] }
+
+[[bin]]
+name = "clickbench"
+path = "src/bin/clickbench.rs"
+
+[[bin]]
+name = "parquet-optimize"
+path = "src/bin/parquet_optimize.rs"

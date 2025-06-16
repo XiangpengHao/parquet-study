@@ -1,0 +1,7 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+You're working on a research project that aims to understand parquet files and its use in Apache DataFusion.
+When write code, you should focus on educational rather than production ready: keep main ideas/structure simple, don't do error handling, make code concise and easy to read, but you should still write fully functional code.
