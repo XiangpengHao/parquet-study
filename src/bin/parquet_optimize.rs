@@ -94,6 +94,18 @@ fn determine_statistics_level(
     }
 }
 
+fn get_row_group_info(metadata: &parquet::file::metadata::ParquetMetaData) -> Vec<(usize, i64)> {
+    let mut row_group_info = Vec::new();
+    
+    for i in 0..metadata.num_row_groups() {
+        let row_group = metadata.row_group(i);
+        let num_rows = row_group.num_rows();
+        row_group_info.push((i, num_rows));
+    }
+    
+    row_group_info
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
@@ -123,11 +135,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.input, output_path, args.compression
     );
 
-    // Read the input parquet file
+    // Read the input parquet file metadata
     let file = File::open(&args.input)?;
     let mut metadata_reader = ParquetMetaDataReader::new().with_page_indexes(true);
     metadata_reader.try_parse(&file)?;
     let metadata = metadata_reader.finish()?;
+
+    // Get row group structure from original file
+    let row_group_info = get_row_group_info(&metadata);
+    println!("Original file has {} row groups:", row_group_info.len());
+    for (rg_idx, num_rows) in &row_group_info {
+        println!("  Row group {}: {} rows", rg_idx, num_rows);
+    }
 
     // Determine the statistics level from the original file
     let (original_stats_level, has_offset_index) = determine_statistics_level(&metadata);
@@ -152,9 +171,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Using column index: {}", use_column_index);
     println!("Statistics level: {:?}", stats_level);
 
-    let builder = ParquetRecordBatchReaderBuilder::try_new(file)?;
+    // Open the input file again for reading data
+    let input_file = File::open(&args.input)?;
+    let builder = ParquetRecordBatchReaderBuilder::try_new(input_file)?;
     let schema = builder.schema().clone();
-    let reader = builder.build()?;
 
     // Create writer with specified compression and index settings
     let output_file = File::create(&output_path)?;
@@ -172,15 +192,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let props = props_builder.build();
-
     let mut writer = ArrowWriter::try_new(output_file, schema, Some(props))?;
 
-    // Copy data with new compression
+    // Copy data preserving row group structure
     let mut total_rows = 0;
-    for batch_result in reader {
-        let batch = batch_result?;
-        total_rows += batch.num_rows();
-        writer.write(&batch)?;
+    
+    for (rg_idx, expected_rows) in row_group_info {
+        println!("Processing row group {} ({} rows)...", rg_idx, expected_rows);
+        
+        // Open a new file handle for each row group
+        let input_file = File::open(&args.input)?;
+        let row_group_builder = ParquetRecordBatchReaderBuilder::try_new(input_file)?;
+        
+        // Read only this specific row group
+        let row_group_reader = row_group_builder.with_row_groups(vec![rg_idx]).build()?;
+        
+        let mut rg_rows = 0;
+        for batch_result in row_group_reader {
+            let batch = batch_result?;
+            rg_rows += batch.num_rows();
+            writer.write(&batch)?;
+        }
+        
+        // Verify we read the expected number of rows
+        if rg_rows as i64 != expected_rows {
+            eprintln!("Warning: Expected {} rows in row group {}, but read {}", expected_rows, rg_idx, rg_rows);
+        }
+        
+        // Close the current row group in the writer
+        writer.flush()?;
+        total_rows += rg_rows;
     }
 
     writer.close()?;
