@@ -2304,6 +2304,7 @@ dependencies = [
 name = "parquet-study"
 version = "0.1.0"
 dependencies = [
+ "arrow",
  "async-trait",
  "bytes",
  "clap",

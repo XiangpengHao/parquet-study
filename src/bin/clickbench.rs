@@ -67,6 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
+    let start = Instant::now();
     match args.query {
         Some(id) if id > 0 && id <= queries.len() => {
             run_query(&ctx, queries[id - 1], id, iterations).await?;
@@ -86,6 +87,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
+    let duration = start.elapsed();
+    println!("Total time: {:8.2}ms", duration.as_secs_f64() * 1000.0);
 
     if let Some(guard) = guard {
         let report = guard.report().build().unwrap();
@@ -133,6 +136,5 @@ async fn run_query_once(
             println!("{:8.2}ms ERROR: {}", duration.as_secs_f64() * 1000.0, e);
         }
     }
-
     Ok(())
 }
