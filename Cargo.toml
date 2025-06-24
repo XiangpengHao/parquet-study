@@ -14,6 +14,8 @@ futures = "0.3.31"
 async-trait = "0.1.88"
 pprof = { version = "0.15.0", features = ["flamegraph"] }
 arrow = "55.1.0"
+# parquet2 = { git = "https://github.com/XiangpengHao/arrow-rs.git", branch = "fine-grained-dict-size", package = "parquet" }
+# arrow2 = { git = "https://github.com/XiangpengHao/arrow-rs.git", branch = "fine-grained-dict-size", package = "arrow" }
 
 [[bin]]
 name = "clickbench"

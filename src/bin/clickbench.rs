@@ -117,7 +117,7 @@ async fn run_query_once(
     sql: &str,
     query_id: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Q{:2}: {:20} ", query_id, sql);
+    println!("Q{query_id:2}: {sql:20} ");
 
     let start = Instant::now();
 

@@ -2,8 +2,8 @@ use clap::{Parser, ValueEnum};
 use parquet::arrow::ArrowWriter;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::basic::Compression;
-use parquet::file::metadata::ParquetMetaDataReader;
-use parquet::file::properties::WriterProperties;
+use parquet::file::metadata::{ParquetMetaData, ParquetMetaDataReader};
+use parquet::file::properties::{EnabledStatistics, WriterProperties};
 use std::fs::File;
 use std::path::Path;
 
@@ -67,11 +67,7 @@ struct Args {
     bloom_filter_ndv: Option<u64>,
 }
 
-fn determine_statistics_level(
-    metadata: &parquet::file::metadata::ParquetMetaData,
-) -> (parquet::file::properties::EnabledStatistics, bool) {
-    use parquet::file::properties::EnabledStatistics;
-
+fn determine_statistics_level(metadata: &ParquetMetaData) -> (EnabledStatistics, bool) {
     // Check if there are any row groups
     if metadata.num_row_groups() == 0 {
         return (EnabledStatistics::None, false);
@@ -110,7 +106,7 @@ fn determine_statistics_level(
     }
 }
 
-fn get_row_group_info(metadata: &parquet::file::metadata::ParquetMetaData) -> Vec<(usize, i64)> {
+fn get_row_group_info(metadata: &ParquetMetaData) -> Vec<(usize, i64)> {
     let mut row_group_info = Vec::new();
 
     for i in 0..metadata.num_row_groups() {
@@ -122,7 +118,7 @@ fn get_row_group_info(metadata: &parquet::file::metadata::ParquetMetaData) -> Ve
     row_group_info
 }
 
-fn has_bloom_filters(metadata: &parquet::file::metadata::ParquetMetaData) -> bool {
+fn has_bloom_filters(metadata: &ParquetMetaData) -> bool {
     // Check if any row group has bloom filter metadata
     for i in 0..metadata.num_row_groups() {
         let row_group = metadata.row_group(i);
@@ -161,10 +157,7 @@ fn calculate_default_bloom_filter_ndv(row_group_info: &[(usize, i64)]) -> u64 {
     estimated_ndv.max(min_ndv).min(max_ndv).min(absolute_max)
 }
 
-fn estimate_ndv_from_row_size(
-    metadata: &parquet::file::metadata::ParquetMetaData,
-    column_index: usize,
-) -> u64 {
+fn estimate_ndv_from_row_size(metadata: &ParquetMetaData, column_index: usize) -> u64 {
     let mut total_bytes = 0i64;
     let mut total_rows = 0i64;
 
@@ -187,7 +180,7 @@ fn estimate_ndv_from_row_size(
 
     // Heuristic: longer strings tend to be more unique
     // For short strings (< 10 bytes avg), assume 50% uniqueness
-    // For medium strings (10-50 bytes), assume 70% uniqueness  
+    // For medium strings (10-50 bytes), assume 70% uniqueness
     // For long strings (> 50 bytes), assume 85% uniqueness
     let uniqueness_factor = if avg_bytes_per_value < 10.0 {
         0.5
@@ -198,22 +191,17 @@ fn estimate_ndv_from_row_size(
     };
 
     let estimated_ndv = (total_rows as f64 * uniqueness_factor) as u64;
-    
+
     // Ensure reasonable bounds
     estimated_ndv.max(100).min(total_rows as u64)
 }
 
-fn should_enable_bloom_filter_for_column(
-    schema: &arrow::datatypes::Schema,
-    column_index: usize,
-) -> bool {
-    if column_index < schema.fields().len() {
-        let field = &schema.fields()[column_index];
-        match field.data_type() {
-            arrow::datatypes::DataType::Utf8 
-            | arrow::datatypes::DataType::LargeUtf8
-            | arrow::datatypes::DataType::Binary 
-            | arrow::datatypes::DataType::LargeBinary => true,
+fn should_enable_bloom_filter_for_column(metadata: &ParquetMetaData, column_index: usize) -> bool {
+    let schema_descr = metadata.file_metadata().schema_descr();
+    if column_index < schema_descr.num_columns() {
+        let column_descr = schema_descr.column(column_index);
+        match column_descr.physical_type() {
+            parquet::basic::Type::BYTE_ARRAY | parquet::basic::Type::FIXED_LEN_BYTE_ARRAY => true,
             _ => false,
         }
     } else {
@@ -256,11 +244,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     metadata_reader.try_parse(&file)?;
     let metadata = metadata_reader.finish()?;
 
-    // Get schema for column type analysis
-    let input_file_for_schema = File::open(&args.input)?;
-    let builder = ParquetRecordBatchReaderBuilder::try_new(input_file_for_schema)?;
-    let schema = builder.schema().clone();
-
     // Get row group structure from original file
     let row_group_info = get_row_group_info(&metadata);
     println!("Original file has {} row groups:", row_group_info.len());
@@ -282,23 +265,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Handle auto bloom filter logic
     let use_bloom_filter = if args.auto_bloom_filter {
         println!("Auto bloom filter enabled - analyzing columns...");
-        
+
         // Check which columns should get bloom filters
         let mut bloom_filter_columns = Vec::new();
-        for i in 0..schema.fields().len() {
-            if should_enable_bloom_filter_for_column(&schema, i) {
-                let field = &schema.fields()[i];
+        let schema_descr = metadata.file_metadata().schema_descr();
+        for i in 0..schema_descr.num_columns() {
+            if should_enable_bloom_filter_for_column(&metadata, i) {
+                let column_descr = schema_descr.column(i);
                 let estimated_ndv = estimate_ndv_from_row_size(&metadata, i);
-                println!("  Column '{}' ({}): enabling bloom filter, estimated NDV: {}", 
-                    field.name(), field.data_type(), estimated_ndv);
+                println!(
+                    "  Column '{}' ({}): enabling bloom filter, estimated NDV: {}",
+                    column_descr.name(),
+                    column_descr.physical_type(),
+                    estimated_ndv
+                );
                 bloom_filter_columns.push((i, estimated_ndv));
             } else {
-                let field = &schema.fields()[i];
-                println!("  Column '{}' ({}): skipping (not byte array type)", 
-                    field.name(), field.data_type());
+                let column_descr = schema_descr.column(i);
+                println!(
+                    "  Column '{}' ({}): skipping (not byte array type)",
+                    column_descr.name(),
+                    column_descr.physical_type()
+                );
             }
         }
-        
+
         !bloom_filter_columns.is_empty()
     } else {
         args.bloom_filter.unwrap_or(has_bloom_filter)
@@ -310,7 +301,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // When column index is enabled, statistics level should be page
     let stats_level = if use_column_index {
-        parquet::file::properties::EnabledStatistics::Page
+        EnabledStatistics::Page
     } else {
         original_stats_level
     };
@@ -339,7 +330,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut props_builder = WriterProperties::builder()
         .set_compression(compression)
         .set_statistics_enabled(stats_level)
-        .set_dictionary_page_size_limit(1024 * 1024 * 1024)
+        .set_dictionary_page_size_limit(1024 * 1024 * 2)
         .set_offset_index_disabled(!use_offset_index);
 
     // Column index is enabled by default when statistics are page-level
@@ -353,13 +344,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if use_bloom_filter {
         if args.auto_bloom_filter {
             // Set up column-specific bloom filters
-            for i in 0..schema.fields().len() {
-                if should_enable_bloom_filter_for_column(&schema, i) {
+            let schema_descr = metadata.file_metadata().schema_descr();
+            for i in 0..schema_descr.num_columns() {
+                if should_enable_bloom_filter_for_column(&metadata, i) {
                     let estimated_ndv = estimate_ndv_from_row_size(&metadata, i);
                     let fpp = args.bloom_filter_fpp.unwrap_or(0.05);
-                    let field = &schema.fields()[i];
-                    let column_path = parquet::schema::types::ColumnPath::from(field.name().as_str());
-                    
+                    let column_descr = schema_descr.column(i);
+                    let column_path = parquet::schema::types::ColumnPath::from(column_descr.name());
+
                     props_builder = props_builder
                         .set_column_bloom_filter_enabled(column_path.clone(), true)
                         .set_column_bloom_filter_fpp(column_path.clone(), fpp)

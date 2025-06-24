@@ -8,6 +8,8 @@ Why?
 Uncompressed data is large, they cost a lot of I/O. You decompressor/decoder throughput is much faster than your I/O throughput.
 
 
+How to shrink size without using general purpose compression?
+
 ## Page stats and location index
 You always want to enable them. They cost very little space, but is incredibly useful for certain queries.
 
@@ -26,3 +28,5 @@ If dictionary size is too small, some values are plain encoded, which is bad.
 A file should contain more than 4 row groups to allow row-group level parallelism.
 
 A row group size should be less than 64MB, because query engine will read the whole row group into memory.
+
+## File size
