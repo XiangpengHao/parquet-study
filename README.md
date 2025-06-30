@@ -34,8 +34,16 @@ ctx.register_parquet_with_meta_cache(
 If you're low-level listing table users:
 
 ```rust
-use crate::metadata_cache::ParquetFormatMetadataCacheFactory;
+use crate::metadata_cache::{ParquetFormatMetadataCacheFactory, ToListingOptionsWithMetaCache};
 
-let format_factory = ParquetFormatMetadataCacheFactory::new();
-let listing_options = ListingOptions::new(format_factory.default());
+let parquet_options = ParquetReadOptions::default();
+let listing_options = parquet_options.to_listing_options_with_meta_cache(&ctx.copied_config(), ctx.copied_table_options());
+
+ctx.register_listing_table(
+    "table",
+    "path/to/file.parquet",
+    listing_options,
+    parquet_options.schema.map(|s| Arc::new(s.to_owned())),
+    None,
+).await?;
 ```
