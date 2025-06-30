@@ -30,3 +30,14 @@ A file should contain more than 4 row groups to allow row-group level parallelis
 A row group size should be less than 64MB, because query engine will read the whole row group into memory.
 
 ## File size
+
+## Use a StringView or StringDictionary
+
+Without string view: 4.2s, with string view: 2.8s.
+
+## Compiler flags:
+
+```
+env RUSTFLAGS='-C target-cpu=native'
+```
+This tells the compiler to use the native CPU instructions, resulting in less portable binary but usually faster.

@@ -24,3 +24,7 @@ path = "src/bin/clickbench.rs"
 [[bin]]
 name = "parquet-optimize"
 path = "src/bin/parquet_optimize.rs"
+
+[[bin]]
+name = "decode_all"
+path = "src/bin/decode_all.rs"
