@@ -1,7 +1,6 @@
 # Parquet study
 
-A working-in-progress project to help people make most of Parquet (so that you don't need a fancy new format).
-
+A working-in-progress project to help people make most of Parquet (so that you don't need a hyped-up new format).
 
 ## Chapter 1: Metadata cache
 
